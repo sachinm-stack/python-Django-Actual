@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import RegisterSerializer, UserSerializer
+from .serializers import LoginSerializer, RegisterSerializer, UserSerializer
 
 # ── Helper: generate tokens for a user ────────────────────
 def get_tokens_for_user(user):
@@ -42,3 +42,35 @@ class RegisterView(APIView):
 
         # Validation failed → return errors
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+from django.contrib.auth import authenticate
+from .serializers import LoginSerializer, LoginResponseSerializer
+# ══════════════════════════════════════════════════════════
+# LOGIN VIEW
+# ══════════════════════════════════════════════════════════
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        login_serializer = LoginSerializer(data=request.data)
+        if not login_serializer.is_valid():
+            return Response(login_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        username = login_serializer.validated_data['username']  
+        password = login_serializer.validated_data['password']
+        # Django's built-in authenticate checks username + password
+        user = authenticate(username=username, password=password)
+
+        if user is not None:
+            tokens = get_tokens_for_user(user)
+            return Response({
+                'user':   LoginResponseSerializer(user).data,
+                'tokens': tokens,
+            })
+
+        return Response(
+            {'error': 'Invalid username or password'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
