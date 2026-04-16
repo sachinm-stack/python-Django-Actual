@@ -1,0 +1,11 @@
+question,question_type,marks,option1,option2,option3,option4,correct_option
+2+2?,mcq,1,1,2,3,4,4
+Capital of India?,mcq,1,Delhi,Mumbai,Chennai,Kolkata,Delhi
+Explain OOP?,text,5,,,,,
+What is Django?,text,3,,,,,
+5*3?,mcq,1,10,15,20,25,15
+What is REST API?,text,4,,,,,
+Sun rises from?,mcq,1,West,East,North,South,East
+Define DBMS,text,5,,,,,
+10/2?,mcq,1,2,3,5,10,5
+Explain HTTP methods,text,5,,,,,

@@ -2,19 +2,11 @@ from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth import authenticate
 
 from testapp.permissions import IsTeacher
-from .models import Question
-from .serializers import (
-    LoginSerializer, RegisterSerializer, UserSerializer,
-    LoginResponseSerializer,
-    CreateTestSerializer, ListTestSerializer,
-    QuestionSerializer, OptionSerializer,
-    QuestionWithOptionsSerializer
-)
+from .serializers import CreateQuestionSerializer, LoginSerializer, RegisterSerializer, UserSerializer
 
 # ── Helper: generate tokens for a user ────────────────────
 def get_tokens_for_user(user):
@@ -24,27 +16,39 @@ def get_tokens_for_user(user):
         'access':  str(refresh.access_token),
     }
 
+# Create your views here.
 # ══════════════════════════════════════════════════════════
 # REGISTER VIEW
 # ══════════════════════════════════════════════════════════
 class RegisterView(APIView):
+    # AllowAny — no token needed to register (makes sense!)
     permission_classes = [AllowAny]
 
     def post(self, request):
+        # 1. Pass incoming JSON to serializer
         serializer = RegisterSerializer(data=request.data)
 
+        # 2. Validate — like our __init__ type checks in OOP
         if serializer.is_valid():
+            # 3. Save → calls our overridden create() → create_user()
             user = serializer.save()
+
+            # 4. Generate JWT tokens
             tokens = get_tokens_for_user(user)
 
+            # 5. Return user data + tokens
             return Response({
                 'user':   UserSerializer(user).data,
                 'tokens': tokens,
             }, status=status.HTTP_201_CREATED)
 
+        # Validation failed → return errors
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 
 
+from django.contrib.auth import authenticate
+from .serializers import LoginSerializer, LoginResponseSerializer
 # ══════════════════════════════════════════════════════════
 # LOGIN VIEW
 # ══════════════════════════════════════════════════════════
@@ -53,18 +57,16 @@ class LoginView(APIView):
 
     def post(self, request):
         login_serializer = LoginSerializer(data=request.data)
-
         if not login_serializer.is_valid():
             return Response(login_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        username = login_serializer.validated_data['username']
+        username = login_serializer.validated_data['username']  
         password = login_serializer.validated_data['password']
-
+        # Django's built-in authenticate checks username + password
         user = authenticate(username=username, password=password)
 
         if user is not None:
             tokens = get_tokens_for_user(user)
-
             return Response({
                 'user':   LoginResponseSerializer(user).data,
                 'tokens': tokens,
@@ -75,85 +77,62 @@ class LoginView(APIView):
             status=status.HTTP_401_UNAUTHORIZED
         )
 
+from .serializers import CreateTestSerializer, ListTestSerializer
 
-# ══════════════════════════════════════════════════════════
-# CREATE + LIST TEST
-# ══════════════════════════════════════════════════════════
 class CreateTestView(APIView):
     permission_classes = [IsTeacher]
-
     def post(self, request):
         serializer = CreateTestSerializer(data=request.data)
-
         if serializer.is_valid():
             test = serializer.save(created_by=request.user)
-            return Response({
-                'message': 'Test created successfully',
-                'test_id': test.id
-            }, status=status.HTTP_201_CREATED)
-
+            return Response({'message': 'Test created successfully', 'test_id': test.id}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def get(self, request):
+        # List all tests created by the teacher
         tests = request.user.created_tests.all()
         serializer = ListTestSerializer(tests, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-
-# ══════════════════════════════════════════════════════════
-# CREATE QUESTION
-# ══════════════════════════════════════════════════════════
-class CreateQuestionView(APIView):
+class QuestionView(APIView):
     permission_classes = [IsTeacher]
-
     def post(self, request):
-        serializer = QuestionSerializer(data=request.data)
-
+        serializer = CreateQuestionSerializer(data=request.data)
         if serializer.is_valid():
-            test = serializer.validated_data['test']
-
-            # 🔒 SECURITY: Only owner can add questions
-            if test.created_by != request.user:
-                return Response(
-                    {"error": "You can only add questions to your own test"},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-
             question = serializer.save()
-
-            return Response({
-                "message": "Question created successfully",
-                "question_id": question.id
-            }, status=status.HTTP_201_CREATED)
-
+            return Response({'message': 'Question created successfully', 'question_id': question.id}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 
 
-# ══════════════════════════════════════════════════════════
-# CREATE OPTION
-# ══════════════════════════════════════════════════════════
-class CreateOptionView(APIView):
+
+
+
+
+###############################################################################################
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+
+from .serializers import UploadTestCSVSerializer
+
+
+class UploadTestCSVView(APIView):
     permission_classes = [IsTeacher]
 
     def post(self, request):
-        serializer = OptionSerializer(data=request.data)
+        serializer = UploadTestCSVSerializer(
+            data=request.data,
+            context={"request": request}
+        )
 
         if serializer.is_valid():
-            serializer.save()
+            test = serializer.save()
+
             return Response({
-                "message": "Option created successfully"
-            }, status=status.HTTP_201_CREATED)
+                "message": "Test created successfully",
+                "test_id": test.id
+            }, status=201)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-# ══════════════════════════════════════════════════════════
-# GET QUESTIONS WITH OPTIONS BY TEST
-# ══════════════════════════════════════════════════════════
-class ListQuestionsByTestView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, test_id):
-        questions = Question.objects.filter(test_id=test_id)
-        serializer = QuestionWithOptionsSerializer(questions, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=400)
